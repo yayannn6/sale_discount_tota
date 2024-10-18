@@ -37,7 +37,7 @@ Module to manage discount on total amount in Sale.
         as an specific amount or percentage
 """,
     'depends': ['sale',
-                'account', 'delivery'
+                'account'
                 ],
     'data': [
         'views/res_config_view.xml',
