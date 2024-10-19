@@ -149,33 +149,40 @@ class AccountInvoice(models.Model):
 
             move.payment_state = new_pmt_state
 
-    @api.onchange('discount_type', 'discount_rate', 'invoice_line_ids')
-    def _supply_rate(self):
-        for inv in self:
-            if inv.discount_type == 'percent' and inv.discount_rate > 0:
-                discount_totals = 0
-                for line in inv.invoice_line_ids:
-                    line.discount = inv.discount_rate
-                    total_price = line.price_unit * line.quantity
-                    discount_total = total_price - line.price_subtotal
-                    discount_totals = discount_totals + discount_total
-                    inv.amount_discount = discount_totals
-                    line._compute_totals()
-            elif inv.discount_rate > 0:
-                total = discount = 0.0
-                for line in inv.invoice_line_ids:
-                    total += (line.quantity * line.price_unit)
-                if inv.discount_rate != 0:
-                    discount = (inv.discount_rate / total) * 100
-                else:
-                    discount = inv.discount_rate
-                for line in inv.invoice_line_ids:
-                    line.discount = discount
+    def write(self, vals):
+        result = super(AccountInvoice, self).write(vals)
+        # Sebelum memanggil `write()` aslinya, Anda dapat menambahkan logika di sini
+        if 'discount_type' in vals or 'discount_rate' in vals or 'invoice_line_ids' in vals:
+            for inv in self:
+                # Hitung diskon berdasarkan tipe
+                if inv.discount_type == 'percent':
+                    inv.amount_discount = inv.amount_untaxed * inv.discount_rate / 100
+                    inv.amount_total = inv.amount_untaxed - inv.amount_discount + inv.amount_tax
+                    inv.amount_residual = inv.amount_untaxed - inv.amount_discount + inv.amount_tax
+                elif inv.discount_type == 'amount':
                     inv.amount_discount = inv.discount_rate
-                    line._compute_totals()
+                    inv.amount_total = inv.amount_untaxed - inv.discount_rate + inv.amount_tax
+                    inv.amount_residual = inv.amount_untaxed - inv.discount_rate + inv.amount_tax
 
-            inv._compute_tax_totals()
+        # Panggil metode `write()` asli untuk menyimpan perubahan ke database
+        
+        # Jika perlu, tambahkan tindakan setelah `write()`
+        
+        return result
 
+    @api.onchange('discount_type', 'discount_rate', 'invoice_line_ids')
+    def _compute_totals(self):
+        
+        for inv in self:
+            if inv.discount_type == 'percent':
+                inv.amount_discount = inv.amount_untaxed * inv.discount_rate / 100
+                inv.amount_total = inv.amount_untaxed - inv.amount_discount + inv.amount_tax
+                inv.amount_residual = inv.amount_untaxed - inv.amount_discount + inv.amount_tax
+            elif inv.discount_type == 'amount':
+                inv.amount_discount = inv.discount_rate
+                inv.amount_total = inv.amount_untaxed - inv.amount_discount + inv.amount_tax
+                inv.amount_residual = inv.amount_untaxed - inv.amount_discount + inv.amount_tax
+           
     def button_dummy(self):
         self.supply_rate()
         return True
