@@ -226,7 +226,9 @@ class AccountInvoice(models.Model):
                     inv.amount_discount = inv.discount_rate
                     line._compute_totals()
 
+
             inv._compute_tax_totals()
+            inv.amount_total = inv.amount_untaxed_cus - inv.amount_discount + inv.amount_tax
 
 
     # @api.onchange('discount_type', 'discount_rate', 'invoice_line_ids', 'tax')
