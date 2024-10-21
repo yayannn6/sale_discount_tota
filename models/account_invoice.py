@@ -155,67 +155,96 @@ class AccountInvoice(models.Model):
 
             move.payment_state = new_pmt_state
 
-    def write(self, vals):
-        result = super(AccountInvoice, self).write(vals)
+    # def write(self, vals):
+    #     result = super(AccountInvoice, self).write(vals)
 
+    #     for inv in self:
+    #         # Compute untaxed amount (subtotal before tax and discount)
+    #         amount_untaxed_cus = sum(line.price_subtotal for line in inv.invoice_line_ids)
+
+    #         # Calculate the total discount
+    #         if inv.discount_type == 'percent':
+    #             amount_discount = amount_untaxed_cus * inv.discount_rate / 100
+    #         elif inv.discount_type == 'amount':
+    #             amount_discount = inv.discount_rate
+    #         else:
+    #             amount_discount = 0.0
+
+    #         # Calculate the subtotal (after discount)
+    #         amount_sub_total = amount_untaxed_cus - amount_discount
+
+    #         # Compute taxes based on the discounted amount
+    #         total_tax = 0.0
+    #         if inv.tax:
+    #             taxes = inv.tax.compute_all(amount_sub_total)
+    #             total_tax = sum(t['amount'] for t in taxes['taxes'])
+
+    #         # Calculate the total amount (subtotal after discount + taxes)
+    #         amount_total_cus = amount_sub_total + total_tax
+
+    #         # Prepare a dictionary of values to update
+    #         update_vals = {
+    #             'amount_untaxed_cus': amount_untaxed_cus,
+    #             'amount_discount': amount_discount,
+    #             'amount_sub_total': amount_sub_total,
+    #             'amount_taxed_cus': total_tax,
+    #             'amount_total_cus': amount_total_cus,
+    #             'amount_total' : amount_total_cus,
+    #             'amount_residual' : amount_total_cus,
+    #             'amount_sub_total' : amount_total_cus
+
+    #         }
+
+    #         # Write the computed values back to the record
+    #         super(AccountInvoice, inv).write(update_vals)
+
+    #     return result
+
+    @api.onchange('discount_type', 'discount_rate', 'invoice_line_ids')
+    def _supply_rate(self):
         for inv in self:
-            # Compute untaxed amount (subtotal before tax and discount)
-            amount_untaxed_cus = sum(line.price_subtotal for line in inv.invoice_line_ids)
-
-            # Calculate the total discount
+            inv.amount_untaxed_cus = sum(line.total_amount for line in inv.invoice_line_ids)
             if inv.discount_type == 'percent':
-                amount_discount = amount_untaxed_cus * inv.discount_rate / 100
-            elif inv.discount_type == 'amount':
-                amount_discount = inv.discount_rate
+                discount_totals = 0
+                for line in inv.invoice_line_ids:
+                    line.discount = inv.discount_rate
+                    total_price = line.price_unit * line.quantity
+                    discount_total = total_price - line.price_subtotal
+                    discount_totals = discount_totals + discount_total
+                    inv.amount_discount = discount_totals
+                    line._compute_totals()
             else:
-                amount_discount = 0.0
+                total = discount = 0.0
+                for line in inv.invoice_line_ids:
+                    total += (line.quantity * line.price_unit)
+                if inv.discount_rate != 0:
+                    discount = (inv.discount_rate / total) * 100
+                else:
+                    discount = inv.discount_rate
+                for line in inv.invoice_line_ids:
+                    line.discount = discount
+                    inv.amount_discount = inv.discount_rate
+                    line._compute_totals()
 
-            # Calculate the subtotal (after discount)
-            amount_sub_total = amount_untaxed_cus - amount_discount
+            inv._compute_tax_totals()
 
-            # Compute taxes based on the discounted amount
-            total_tax = 0.0
-            if inv.tax:
-                taxes = inv.tax.compute_all(amount_sub_total)
-                total_tax = sum(t['amount'] for t in taxes['taxes'])
 
-            # Calculate the total amount (subtotal after discount + taxes)
-            amount_total_cus = amount_sub_total + total_tax
-
-            # Prepare a dictionary of values to update
-            update_vals = {
-                'amount_untaxed_cus': amount_untaxed_cus,
-                'amount_discount': amount_discount,
-                'amount_sub_total': amount_sub_total,
-                'amount_taxed_cus': total_tax,
-                'amount_total_cus': amount_total_cus,
-                'amount_total' : amount_total_cus,
-                'amount_residual' : amount_total_cus,
-                'amount_sub_total' : amount_total_cus
-
-            }
-
-            # Write the computed values back to the record
-            super(AccountInvoice, inv).write(update_vals)
-
-        return result
-
-    @api.onchange('discount_type', 'discount_rate', 'invoice_line_ids', 'tax')
-    def _compute_total_invoice(self):
-        for inv in self:
-            inv.amount_untaxed_cus = sum(line.price_subtotal for line in inv.invoice_line_ids)
-            if inv.discount_type == 'percent':
-                inv.amount_discount = inv.amount_untaxed_cus * inv.discount_rate / 100
-            elif inv.discount_type == 'amount':
-                inv.amount_discount = inv.discount_rate
-            inv.amount_sub_total = inv.amount_untaxed_cus - inv.amount_discount
-            total_tax = 0.0
-            if inv.tax:
-                taxes = inv.tax.compute_all(inv.amount_sub_total)
-                total_tax = sum(t['amount'] for t in taxes['taxes'])
-            inv.amount_taxed_cus = total_tax
-            inv.amount_total_cus = inv.amount_sub_total + inv.amount_taxed_cus
-            inv.amount_residual = inv.amount_total_cus
+    # @api.onchange('discount_type', 'discount_rate', 'invoice_line_ids', 'tax')
+    # def _compute_total_invoice(self):
+    #     for inv in self:
+    #         inv.amount_untaxed_cus = sum(line.price_subtotal for line in inv.invoice_line_ids)
+    #         if inv.discount_type == 'percent':
+    #             inv.amount_discount = inv.amount_untaxed_cus * inv.discount_rate / 100
+    #         elif inv.discount_type == 'amount':
+    #             inv.amount_discount = inv.discount_rate
+    #         inv.amount_sub_total = inv.amount_untaxed_cus - inv.amount_discount
+    #         total_tax = 0.0
+    #         if inv.tax:
+    #             taxes = inv.tax.compute_all(inv.amount_sub_total)
+    #             total_tax = sum(t['amount'] for t in taxes['taxes'])
+    #         inv.amount_taxed_cus = total_tax
+    #         inv.amount_total_cus = inv.amount_sub_total + inv.amount_taxed_cus
+    #         inv.amount_residual = inv.amount_total_cus
            
     def button_dummy(self):
         self.supply_rate()
@@ -226,3 +255,9 @@ class AccountInvoiceLine(models.Model):
     _inherit = "account.move.line"
 
     discount = fields.Float(string='Discount (%)', digits=(16, 20), default=0.0)
+    total_amount = fields.Monetary("Subtotal")
+
+    @api.onchange('quantity', 'price_unit')
+    def _subtotal_price(self):
+        for line in self:
+            line.total_amount = line.price_unit * line.quantity

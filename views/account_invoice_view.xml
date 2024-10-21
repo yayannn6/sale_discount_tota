@@ -17,7 +17,6 @@
                     <group>
                         <field name="discount_type"  width="50px"/>
                         <field name="discount_rate" class="oe_inline"/>
-                        <field name="tax" widget="many2many_tags"/>
                     </group>
                 </xpath>
             </field>
