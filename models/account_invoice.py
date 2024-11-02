@@ -203,15 +203,18 @@ class AccountInvoice(models.Model):
     @api.onchange('discount_type', 'discount_rate', 'invoice_line_ids')
     def _supply_rate(self):
         for inv in self:
-            inv.amount_untaxed_cus = sum(line.total_amount for line in inv.invoice_line_ids)
             if inv.discount_type == 'percent':
                 discount_totals = 0
                 for line in inv.invoice_line_ids:
+                    line.total_amount = line.price_unit * line.quantity
                     line.discount = inv.discount_rate
                     total_price = line.price_unit * line.quantity
                     discount_total = total_price - line.price_subtotal
                     discount_totals = discount_totals + discount_total
                     inv.amount_discount = discount_totals
+                    line_tax_base = line.price_subtotal 
+                    nilai_tax = sum(tax.amount / 100 * line_tax_base for tax in line.tax_ids)
+                    inv.amount_tax += nilai_tax
                     line._compute_totals()
             else:
                 total = discount = 0.0
@@ -224,11 +227,18 @@ class AccountInvoice(models.Model):
                 for line in inv.invoice_line_ids:
                     line.discount = discount
                     inv.amount_discount = inv.discount_rate
+                    line.total_amount = line.price_unit * line.quantity
+                    line_tax_base = line.price_subtotal
+                    nilai_tax = sum(tax.amount / 100 * line_tax_base for tax in line.tax_ids)
+                    inv.amount_tax += nilai_tax
                     line._compute_totals()
 
-
+            inv.amount_untaxed_cus = sum(line.total_amount for line in inv.invoice_line_ids)
             inv._compute_tax_totals()
             inv.amount_total = inv.amount_untaxed_cus - inv.amount_discount + inv.amount_tax
+            for line in inv.line_ids:
+                if line.debit > 0:
+                    line.amount_currency = inv.amount_untaxed_cus
 
 
     # @api.onchange('discount_type', 'discount_rate', 'invoice_line_ids', 'tax')
@@ -252,6 +262,11 @@ class AccountInvoice(models.Model):
         self.supply_rate()
         return True
 
+    @api.depends('invoice_line_ids')
+    def _compute_subtotal_price(self):
+        for line in self.invoice_line_ids:
+            line.total_amount = line.price_unit * line.quantity
+
 
 class AccountInvoiceLine(models.Model):
     _inherit = "account.move.line"
@@ -259,7 +274,7 @@ class AccountInvoiceLine(models.Model):
     discount = fields.Float(string='Discount (%)', digits=(16, 20), default=0.0)
     total_amount = fields.Monetary("Subtotal")
 
-    @api.onchange('quantity', 'price_unit')
+    @api.depends('quantity', 'price_unit')
     def _subtotal_price(self):
         for line in self:
             line.total_amount = line.price_unit * line.quantity
